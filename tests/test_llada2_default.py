@@ -59,6 +59,16 @@ def test_uniform_logits_all_remask() -> None:
     assert out.next_input_block == (LLADA2_DEFAULT_MASK_TOKEN_ID,) * DRAFT_SIZE
 
 
+def test_logit_tie_breaks_to_smallest_index() -> None:
+    """Equal top logits: pick smallest index (aligns with typical argmax)."""
+    policy = Llada2DefaultRemaskingPolicy()
+    row = [1.0, 1.0, 0.0, 0.0]
+    logits = [list(row) for _ in range(DRAFT_SIZE)]
+    out = policy.apply(input_block=_input_block(), logits=logits)
+    assert out.committed_token_ids == (0,) * DRAFT_SIZE
+    assert out.next_input_block == (0,) * DRAFT_SIZE
+
+
 def test_high_confidence_commits_custom_argmax() -> None:
     policy = Llada2DefaultRemaskingPolicy()
     row = [0.0] * 8

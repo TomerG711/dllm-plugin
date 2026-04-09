@@ -82,16 +82,20 @@ def _logits_to_rows(logits: Any) -> list[list[float]]:
 
 
 def _argmax_and_max_softmax_prob(logits_row: Sequence[float]) -> tuple[int, float]:
-    """Return argmax index and softmax probability at that index (stable softmax)."""
+    """Return argmax index and softmax probability at that index (stable softmax).
+
+    On logit ties, the **smallest** index among maxima wins (matches common
+    ``argmax`` conventions and ``torch.argmax`` on tied values).
+    """
     if not logits_row:
         raise ValueError("logits row must be non-empty")
     m = max(logits_row)
+    best = min(j for j, x in enumerate(logits_row) if x == m)
     exps = [math.exp(x - m) for x in logits_row]
     total = sum(exps)
     if total <= 0.0:
         raise ValueError("softmax normalization produced non-positive total")
     probs = [e / total for e in exps]
-    best = max(range(len(probs)), key=lambda j: probs[j])
     return best, probs[best]
 
 
