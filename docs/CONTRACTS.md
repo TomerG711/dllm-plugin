@@ -86,10 +86,14 @@ per-request block length, this helper must gain an explicit length parameter (or
 a replacement); otherwise it becomes misleading.
 
 **LLaDA2 default policy (`Llada2DefaultRemaskingPolicy`, issue #7):** optional
-`remasking_config` keys: `commit_confidence_threshold` (float), `mask_token_id`
-(int), `denoise_steps` (int), `denoise_step_index` (int), `num_transfer` (int
-override). Defaults in `vllm_dllm_plugin.config`. See module docstring in
-`vllm_dllm_plugin.remasking.llada2_default`.
+`remasking_config` keys: `commit_confidence_threshold` (float; a masked position
+counts as **high-confidence** only when softmax probability at the argmax token
+is **strictly greater** than this value — the same comparator as Hugging Face
+Diffusers [`BlockRefinementScheduler.step`](https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_block_refinement.py)),
+`mask_token_id` (int), `denoise_steps` (int), `denoise_step_index` (int),
+`num_transfer` (int override of the per-step transfer budget; **not** in the
+Diffusers API, for tests and tooling). Defaults in `vllm_dllm_plugin.config`. See
+module docstring in `vllm_dllm_plugin.remasking.llada2_default`.
 
 ## See also
 

@@ -5,8 +5,9 @@
 Per-position **argmax** token and **softmax probability** at that token (stable
 softmax). Only **mask** positions participate in confidence-based transfer; decoded
 positions are preserved. Each step uses a **transfer count** from a schedule over
-``denoise_steps`` (or a ``num_transfer`` override). If enough masked positions meet
-``commit_confidence_threshold`` (**inclusive** ``>=``), all of them transfer; otherwise
+``denoise_steps`` (or a ``num_transfer`` override). If enough masked positions have
+softmax probability at the argmax **strictly greater than**
+``commit_confidence_threshold``, all of them transfer; otherwise
 the top-``k`` masked positions by confidence transfer (``k`` capped by mask count),
 with **smallest index** winning ties.
 
@@ -17,8 +18,9 @@ step returns the full decoded block as ``committed_token_ids`` and sets
 
 **``remasking_config`` keys** (optional; stable for issue #13 / worker wiring):
 
-- ``commit_confidence_threshold`` (``float``): minimum softmax probability on the
-  argmax token for a masked position to count as high-confidence (default
+- ``commit_confidence_threshold`` (``float``): masked positions count as
+  high-confidence when softmax probability at the argmax token is **strictly**
+  greater than this value (default
   :data:`~vllm_dllm_plugin.config.LLADA2_DEFAULT_COMMIT_CONFIDENCE_THRESHOLD`).
 - ``mask_token_id`` (``int``): mask placeholder in drafts (default
   :data:`~vllm_dllm_plugin.config.LLADA2_DEFAULT_MASK_TOKEN_ID`).
@@ -190,7 +192,7 @@ class Llada2DefaultRemaskingPolicy:
         neg_inf = float("-inf")
         confidence = [probs[i] if masked[i] else neg_inf for i in range(DRAFT_SIZE)]
         high_conf = [
-            masked[i] and (confidence[i] >= threshold) for i in range(DRAFT_SIZE)
+            masked[i] and (confidence[i] > threshold) for i in range(DRAFT_SIZE)
         ]
         h = sum(high_conf)
 

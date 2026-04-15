@@ -162,8 +162,8 @@ def test_topk_branch_all_strictly_below_threshold() -> None:
     assert out.next_input_block == tuple(expected)
 
 
-def test_threshold_inclusive_equals_counts_as_high_confidence() -> None:
-    """``confidence == threshold`` counts as high-confidence (inclusive bound)."""
+def test_threshold_strict_excludes_equality() -> None:
+    """HF/Diffusers: ``confidence > threshold``; equality uses top-k, not high-conf."""
     policy = Llada2DefaultRemaskingPolicy()
     row = [0.0] * 8
     logits = [list(row) for _ in range(DRAFT_SIZE)]
@@ -172,8 +172,10 @@ def test_threshold_inclusive_equals_counts_as_high_confidence() -> None:
         logits=logits,
         remasking_config={"commit_confidence_threshold": 0.125},
     )
-    assert out.committed_token_ids == (0,) * DRAFT_SIZE
-    assert out.next_input_block == (LLADA2_DEFAULT_MASK_TOKEN_ID,) * DRAFT_SIZE
+    assert out.committed_token_ids == ()
+    expected = [LLADA2_DEFAULT_MASK_TOKEN_ID] * DRAFT_SIZE
+    expected[0] = 0
+    assert out.next_input_block == tuple(expected)
 
 
 def test_option_a_mid_step_empty_committed() -> None:
