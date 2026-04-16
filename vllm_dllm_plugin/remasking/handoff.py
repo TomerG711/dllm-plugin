@@ -28,7 +28,6 @@ from vllm_dllm_plugin.remasking.base import (
     RemaskStepResult,
     validate_remask_step_result,
 )
-from vllm_dllm_plugin.remasking.llada2_default import Llada2DefaultRemaskingPolicy
 
 
 def assert_block_logits_shape(logits: Any) -> None:
@@ -69,8 +68,8 @@ def remask_after_block_forward(
     *,
     input_draft: Sequence[int],
     logits: Any,
+    policy: RemaskingPolicy,
     remasking_config: Mapping[str, Any] | None = None,
-    policy: RemaskingPolicy | None = None,
 ) -> RemaskStepResult:
     """Run one remasking step after a single-block forward (milestone issue #13).
 
@@ -84,11 +83,11 @@ def remask_after_block_forward(
         input_draft: This step's draft, length ``DRAFT_SIZE`` (aligned with
             ``scheduled_spec_decode_tokens``).
         logits: Non-``None`` block logits, 2-D ``(DRAFT_SIZE, vocab_size)``.
-        remasking_config: Optional knobs for the concrete policy.
-        policy: Optional :class:`~vllm_dllm_plugin.remasking.RemaskingPolicy`.
-            Defaults to
-            :class:`~vllm_dllm_plugin.remasking.Llada2DefaultRemaskingPolicy` for
-            the LLaDA2 MVP; pass another implementation for non-LLaDA2 stacks.
+        policy: Concrete :class:`~vllm_dllm_plugin.remasking.RemaskingPolicy`
+            (e.g. :class:`~vllm_dllm_plugin.remasking.Llada2DefaultRemaskingPolicy`
+            for the LLaDA2 MVP). Callers must supply this; there is no default
+            implementation in this helper.
+        remasking_config: Optional knobs forwarded to ``policy.apply``.
 
     Returns:
         Validated :class:`~vllm_dllm_plugin.remasking.RemaskStepResult`.
@@ -110,10 +109,7 @@ def remask_after_block_forward(
         )
         raise ValueError(msg)
     assert_block_logits_shape(logits)
-    pol: RemaskingPolicy = (
-        policy if policy is not None else Llada2DefaultRemaskingPolicy()
-    )
-    result = pol.apply(
+    result = policy.apply(
         input_draft=input_draft,
         logits=logits,
         remasking_config=remasking_config,
