@@ -3,6 +3,9 @@
 """Tests for ``vllm_dllm_plugin.remasking.handoff`` (issue #13).
 
 Broader field-mapping / worker-runner contract coverage lives in issue #16.
+Tensor-shape tests use ``pytest.importorskip("torch")``; they skip in the default
+dev sync (no PyTorch) and run in the CI ``vllm-extra`` job, which installs
+``--extra vllm`` (Torch is a transitive dependency of vLLM).
 """
 
 from __future__ import annotations
@@ -32,30 +35,19 @@ def _mock_logits(*, vocab_size: int = 256) -> list[list[float]]:
     return [_mock_stub_row(vocab_size=vocab_size) for _ in range(DRAFT_SIZE)]
 
 
-@pytest.fixture
-def llada2_policy() -> Llada2DefaultRemaskingPolicy:
-    return Llada2DefaultRemaskingPolicy()
-
-
-def test_remask_rejects_wrong_input_draft_length(
-    llada2_policy: Llada2DefaultRemaskingPolicy,
-) -> None:
+def test_remask_rejects_wrong_input_draft_length() -> None:
     with pytest.raises(ValueError, match="input_draft length"):
         remask_after_block_forward(
             input_draft=(0,) * (DRAFT_SIZE - 1),
             logits=_mock_logits(),
-            policy=llada2_policy,
         )
 
 
-def test_remask_rejects_logits_none(
-    llada2_policy: Llada2DefaultRemaskingPolicy,
-) -> None:
+def test_remask_rejects_logits_none() -> None:
     with pytest.raises(ValueError, match="logits is None"):
         remask_after_block_forward(
             input_draft=_draft_all_mask(),
             logits=None,
-            policy=llada2_policy,
         )
 
 
@@ -70,43 +62,53 @@ def test_assert_block_logits_shape_rejects_none() -> None:
         assert_block_logits_shape(None)
 
 
-def test_mock_shaped_logits_terminal_matches_direct_policy_apply(
-    llada2_policy: Llada2DefaultRemaskingPolicy,
-) -> None:
+def test_mock_shaped_logits_terminal_matches_direct_policy_apply() -> None:
     draft = _draft_all_mask()
     logits = _mock_logits(vocab_size=256)
-    direct = llada2_policy.apply(
+    policy = Llada2DefaultRemaskingPolicy()
+    direct = policy.apply(
         input_draft=draft,
         logits=logits,
     )
-    via = remask_after_block_forward(
-        input_draft=draft,
-        logits=logits,
-        policy=llada2_policy,
-    )
+    via = remask_after_block_forward(input_draft=draft, logits=logits)
     validate_remask_step_result(via)
     assert via == direct
 
 
-def test_torch_tensor_logits_matches_list_path(
-    llada2_policy: Llada2DefaultRemaskingPolicy,
-) -> None:
+def test_omit_policy_matches_explicit_llada2_default() -> None:
+    draft = _draft_all_mask()
+    logits = _mock_logits()
+    explicit = remask_after_block_forward(
+        input_draft=draft,
+        logits=logits,
+        policy=Llada2DefaultRemaskingPolicy(),
+    )
+    defaulted = remask_after_block_forward(input_draft=draft, logits=logits)
+    assert explicit == defaulted
+
+
+def test_custom_policy_passed_through() -> None:
+    policy = Llada2DefaultRemaskingPolicy()
+    draft = _draft_all_mask()
+    logits = _mock_logits()
+    out = remask_after_block_forward(
+        input_draft=draft,
+        logits=logits,
+        policy=policy,
+    )
+    validate_remask_step_result(out)
+    assert out.committed_token_ids == (0,) * DRAFT_SIZE
+
+
+def test_torch_tensor_logits_matches_list_path() -> None:
     torch = pytest.importorskip("torch")
     draft = _draft_all_mask()
     vocab = 256
     logits_t = torch.zeros(DRAFT_SIZE, vocab, dtype=torch.float32)
     logits_t[:, 0] = 1.0
     logits_list = _mock_logits(vocab_size=vocab)
-    out_t = remask_after_block_forward(
-        input_draft=draft,
-        logits=logits_t,
-        policy=llada2_policy,
-    )
-    out_list = remask_after_block_forward(
-        input_draft=draft,
-        logits=logits_list,
-        policy=llada2_policy,
-    )
+    out_t = remask_after_block_forward(input_draft=draft, logits=logits_t)
+    out_list = remask_after_block_forward(input_draft=draft, logits=logits_list)
     assert out_t == out_list
 
 
@@ -117,14 +119,8 @@ def test_assert_block_logits_shape_rejects_wrong_tensor_rank() -> None:
         assert_block_logits_shape(bad)
 
 
-def test_remask_rejects_wrong_tensor_first_dim(
-    llada2_policy: Llada2DefaultRemaskingPolicy,
-) -> None:
+def test_remask_rejects_wrong_tensor_first_dim() -> None:
     torch = pytest.importorskip("torch")
     bad = torch.zeros(DRAFT_SIZE + 1, 128)
     with pytest.raises(ValueError, match="DRAFT_SIZE"):
-        remask_after_block_forward(
-            input_draft=_draft_all_mask(),
-            logits=bad,
-            policy=llada2_policy,
-        )
+        remask_after_block_forward(input_draft=_draft_all_mask(), logits=bad)

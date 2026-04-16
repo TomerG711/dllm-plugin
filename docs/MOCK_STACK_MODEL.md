@@ -82,3 +82,8 @@ job syncs with `--extra vllm` on Python 3.12 and runs **pytest** (lint already
 ran in the main matrix) so registration and mock import are exercised on PRs. If
 that job fails (e.g. no wheel for the runner), use the **Optional vLLM smoke**
 workflow or `uv sync --group dev --extra vllm` locally.
+
+**PyTorch-dependent tests:** `tests/test_remask_forward_handoff.py` uses
+`pytest.importorskip("torch")` for tensor-shape cases; they **skip** in the
+default matrix (no PyTorch) and **run** in the `vllm-extra` job, which installs
+Torch transitively via the `vllm` extra.
