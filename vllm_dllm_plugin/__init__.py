@@ -9,6 +9,11 @@ import logging
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from vllm_dllm_plugin.runtime_scheduler import DllmRuntimeScheduler
+from vllm_dllm_plugin.runtime_worker import DllmRuntimeWorker
+from vllm_dllm_plugin.scheduler import DllmScheduler
+from vllm_dllm_plugin.worker import DllmWorker
+
 try:
     __version__ = version("vllm-dllm-plugin")
 except PackageNotFoundError:
@@ -77,3 +82,13 @@ def register_dllm() -> None:
             arch,
             DLLM_MOCK_MODEL_CLASS_FQCN,
         )
+
+
+__all__ = [
+    "DllmRuntimeScheduler",
+    "DllmRuntimeWorker",
+    "DllmScheduler",
+    "DllmWorker",
+    "__version__",
+    "register_dllm",
+]
