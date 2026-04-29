@@ -1,0 +1,26 @@
+job:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+
+image:
+  repository: pytorch/pytorch
+  tag: 2.6.0-cuda12.4-cudnn9-devel
+  pullPolicy: IfNotPresent
+
+git:
+  repoUrl: https://github.com/vllm-project/dllm-plugin.git
+  branch: main
+
+gpu:
+  count: 1
+
+# Optional cluster-specific scheduling (defaults are empty = portable).
+# Set nodeSelector / extraTolerations for your GPU nodes (see README.md).
+scheduling:
+  nodeSelector: {}
+  extraTolerations: []
+
+resources:
+  cpu: "6"
+  memory: 24Gi
+  ephemeralStorage: 40Gi

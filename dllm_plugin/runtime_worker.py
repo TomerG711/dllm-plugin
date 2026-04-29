@@ -4,12 +4,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, cast
 
-from vllm_dllm_plugin.config import DRAFT_SIZE, LLADA2_DEFAULT_MASK_TOKEN_ID
-from vllm_dllm_plugin.remasking import Llada2DefaultRemaskingPolicy
-from vllm_dllm_plugin.worker import DllmWorker as DllmWorkerHelper
-from vllm_dllm_plugin.worker import DllmWorkerStep
+from dllm_plugin.config import (
+    DLLM_MOCK_STACK_MODEL_ID,
+    DRAFT_SIZE,
+)
+from dllm_plugin.remasking import Llada2DefaultRemaskingPolicy
+from dllm_plugin.validation import assert_compatible_stack
+from dllm_plugin.worker import DllmWorker as DllmWorkerHelper
+from dllm_plugin.worker import DllmWorkerStep
+
+_MISSING = object()
 
 try:
     from vllm.v1.outputs import DraftTokenIds
@@ -22,34 +29,136 @@ except ImportError:  # pragma: no cover - exercised only in no-vLLM envs.
     _VLLM_AVAILABLE = False
 
 
-def build_mock_block_logits(
+def build_mock_model_block_logits(
     *,
-    input_draft: list[int],
-    sampled_token_ids: list[int],
-    draft_size: int = DRAFT_SIZE,
+    draft_size: int,
+    vocab_size: int,
 ) -> list[list[float]]:
-    """Create deterministic block logits for remask handoff in mock mode."""
+    """Create deterministic mock-model logits rows (id=0 score is highest)."""
 
-    if len(input_draft) != draft_size:
-        raise ValueError(
-            "input_draft length must equal draft_size for mock logits: "
-            f"got {len(input_draft)} vs {draft_size}",
-        )
-    max_seen = max(
-        [LLADA2_DEFAULT_MASK_TOKEN_ID, *input_draft, *sampled_token_ids],
-    )
-    vocab_size = max(max_seen + 2, 256)
+    if draft_size <= 0:
+        raise ValueError(f"draft_size must be positive, got {draft_size}")
+    if vocab_size <= 0:
+        raise ValueError(f"vocab_size must be positive, got {vocab_size}")
     rows: list[list[float]] = []
-    for i in range(draft_size):
-        if i < len(sampled_token_ids):
-            target_id = sampled_token_ids[i]
-        else:
-            draft_tok = input_draft[i]
-            target_id = 0 if draft_tok == LLADA2_DEFAULT_MASK_TOKEN_ID else draft_tok
+    for _ in range(draft_size):
         row = [0.0] * vocab_size
-        row[int(target_id)] = 1.0
+        row[0] = 1.0
         rows.append(row)
     return rows
+
+
+def _normalize_block_logits_rows(*, logits: Any, draft_size: int) -> list[list[float]]:
+    """Normalize and validate score rows for one remask block.
+
+    Phase 6 mock-stack: Python ``float`` rows are fine for small vocabs. Phase 7
+    (real-model logits, large vocabs) should avoid eager full-row materialization here.
+    """
+
+    if len(logits) != draft_size:
+        raise ValueError(
+            "malformed model score rows for runtime remask handoff: "
+            f"expected {draft_size} rows, got {len(logits)}",
+        )
+    normalized: list[list[float]] = []
+    vocab_size: int | None = None
+    for row in logits:
+        row_list = [
+            float(value.item()) if hasattr(value, "item") else float(value)
+            for value in row
+        ]
+        if not row_list:
+            raise ValueError("runtime remask score row must be non-empty")
+        if vocab_size is None:
+            vocab_size = len(row_list)
+        elif len(row_list) != vocab_size:
+            raise ValueError(
+                "runtime remask score rows have inconsistent vocab size: "
+                f"{vocab_size} vs {len(row_list)}",
+            )
+        normalized.append(row_list)
+    return normalized
+
+
+def _resolve_output_logits_by_req_id(
+    *,
+    model_output: Any,
+    request_id: str,
+    request_index: int,
+) -> tuple[Any | None, bool]:
+    """Extract per-request block logits from model output when available."""
+
+    raw = getattr(model_output, "dllm_block_logits", _MISSING)
+    if raw is _MISSING or raw is None:
+        return None, False
+    if isinstance(raw, Mapping):
+        raw_mapping = cast(Mapping[str, Any], raw)
+        if request_id not in raw_mapping:
+            raise ValueError(
+                "runtime remask handoff missing request coverage in "
+                "dllm_block_logits mapping: "
+                f"request_id={request_id!r}",
+            )
+        return raw_mapping[request_id], True
+    try:
+        return cast(Any, raw)[request_index], True
+    except (IndexError, KeyError, TypeError) as exc:
+        raise ValueError(
+            "runtime remask handoff cannot resolve logits row payload for "
+            f"request_id={request_id!r} request_index={request_index}",
+        ) from exc
+
+
+def _is_mock_stack_architecture(vllm_config: Any) -> bool:
+    hf_config = getattr(getattr(vllm_config, "model_config", None), "hf_config", None)
+    if hf_config is None:
+        return False
+    archs = getattr(hf_config, "architectures", ()) or ()
+    if isinstance(archs, str):
+        archs = (archs,)
+    names = {str(item) for item in archs}
+    return DLLM_MOCK_STACK_MODEL_ID in names
+
+
+def resolve_runtime_block_logits(
+    *,
+    model_output: Any,
+    request_id: str,
+    request_index: int,
+    draft_size: int = DRAFT_SIZE,
+    vllm_config: Any,
+) -> list[list[float]]:
+    """Resolve block logits/scores for runtime remask handoff."""
+
+    raw_logits, has_logits_payload = _resolve_output_logits_by_req_id(
+        model_output=model_output,
+        request_id=request_id,
+        request_index=request_index,
+    )
+    if raw_logits is not None:
+        return _normalize_block_logits_rows(logits=raw_logits, draft_size=draft_size)
+    if has_logits_payload:
+        raise ValueError(
+            "runtime remask handoff received unusable logits payload for "
+            f"request_id={request_id!r}",
+        )
+
+    if _is_mock_stack_architecture(vllm_config):
+        hf_config = getattr(
+            getattr(vllm_config, "model_config", None),
+            "hf_config",
+            None,
+        )
+        vocab_size = int(getattr(hf_config, "vocab_size", 256))
+        return build_mock_model_block_logits(
+            draft_size=draft_size,
+            vocab_size=vocab_size,
+        )
+
+    raise ValueError(
+        "runtime remask handoff requires model score rows in model output "
+        f"(missing dllm_block_logits for request_id={request_id!r})",
+    )
 
 
 def run_block_contract_from_model_output(
@@ -57,15 +166,10 @@ def run_block_contract_from_model_output(
     helper: DllmWorkerHelper,
     request_id: str,
     input_draft: list[int],
-    sampled_token_ids: list[int],
+    logits: Any,
 ) -> DllmWorkerStep:
-    """Apply one helper-level remask step using mock logits."""
+    """Apply one helper-level remask step using model-provided logits."""
 
-    logits = build_mock_block_logits(
-        input_draft=input_draft,
-        sampled_token_ids=sampled_token_ids,
-        draft_size=helper.draft_size,
-    )
     return helper.run_one_block(
         request_id=request_id,
         input_draft=input_draft,
@@ -135,6 +239,7 @@ class DllmRuntimeWorker(VllmGPUWorker):
                 "`uv sync --group dev --extra vllm`.",
             )
         super().__init__(*args, **kwargs)
+        assert_compatible_stack(self.vllm_config, caller="DllmRuntimeWorker.__init__")
         # Reuse helper to keep one source of truth for v2 requirement and draft
         # block shape validations.
         self._dllm_helper = DllmWorkerHelper(require_v2_model_runner=True)
@@ -150,7 +255,7 @@ class DllmRuntimeWorker(VllmGPUWorker):
         expected_req_ids = set(output.req_ids)
         next_req_ids: list[str] = []
         next_blocks: list[list[int]] = []
-        for idx, (req_id, sampled_token_ids) in enumerate(
+        for idx, (req_id, _sampled_token_ids) in enumerate(
             zip(output.req_ids, output.sampled_token_ids, strict=True),
         ):
             input_draft = validate_runtime_input_draft(
@@ -158,11 +263,18 @@ class DllmRuntimeWorker(VllmGPUWorker):
                 input_draft=scheduler_output.scheduled_spec_decode_tokens.get(req_id),
                 draft_size=self._dllm_helper.draft_size,
             )
+            block_logits = resolve_runtime_block_logits(
+                model_output=output,
+                request_id=req_id,
+                request_index=idx,
+                draft_size=self._dllm_helper.draft_size,
+                vllm_config=self.vllm_config,
+            )
             step = run_block_contract_from_model_output(
                 helper=self._dllm_helper,
                 request_id=req_id,
                 input_draft=list(input_draft),
-                sampled_token_ids=list(sampled_token_ids),
+                logits=block_logits,
             )
             output.sampled_token_ids[idx] = list(step.sampled_token_ids)
             next_req_ids.append(req_id)
@@ -215,7 +327,8 @@ class DllmRuntimeWorker(VllmGPUWorker):
 
 __all__ = [
     "DllmRuntimeWorker",
-    "build_mock_block_logits",
+    "build_mock_model_block_logits",
+    "resolve_runtime_block_logits",
     "run_block_contract_from_model_output",
     "validate_runtime_draft_handoff_coverage",
     "validate_runtime_input_draft",

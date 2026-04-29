@@ -8,18 +8,14 @@ in issue #12 (Phase 7). Requires a working ``vllm`` + ``torch`` install.
 **Outputs:** ``forward`` returns last-hidden-shaped tensors; ``compute_logits``
 returns a **non-normalized** logit vector (zeros plus a 1.0 at index 0)—fine for
 shape / device / dtype / argmax-bias checks, not for tests that assume a proper
-softmax distribution or diverse sampling. On the last PP rank the logit matrix
-has shape ``(num_tokens, vocab_size)``; for the MVP block handoff (issue #13,
-``vllm_dllm_plugin.remasking.handoff``), ``num_tokens`` must match ``DRAFT_SIZE``.
-Issue #10 should call ``remask_after_block_forward(..., policy=...)`` after
-``compute_logits``, passing the stack's ``RemaskingPolicy``.
+softmax distribution or diverse sampling.
 
 There is **no** ``make_empty_intermediate_tensors``; PP-shaped executor paths may
 fail before ``forward`` until DllmWorker / model parity work (milestone issue
 #10) adds factory hooks or an early error when PP > 1.
 
 **HF config:** ``architectures`` must include a name registered in
-``register_dllm()`` (see ``vllm_dllm_plugin.config`` and ``docs/MOCK_STACK_MODEL.md``).
+``register_dllm()`` (see ``dllm_plugin.config`` and ``docs/MOCK_STACK_MODEL.md``).
 ``hidden_size`` and ``vocab_size`` should be set; defaults below apply if absent.
 
 Pipeline-parallel staging is only **partially** mimicked: non-last ranks return
@@ -39,6 +35,13 @@ from vllm.config import VllmConfig
 from vllm.distributed.parallel_state import get_pp_group
 from vllm.sequence import IntermediateTensors
 
+from dllm_plugin.validation import assert_compatible_stack
+
+try:
+    from vllm.model_executor.layers.attention.layer import Attention
+except ImportError:  # pragma: no cover - depends on vLLM minor layout.
+    from vllm.attention.layer import Attention
+
 
 class DllmMockLlada2ForCausalLM(nn.Module):
     """Minimal causal-LM-shaped module for plugin stack integration tests.
@@ -49,9 +52,21 @@ class DllmMockLlada2ForCausalLM(nn.Module):
     def __init__(self, *, vllm_config: VllmConfig, prefix: str = "") -> None:
         super().__init__()
         del prefix
+        assert_compatible_stack(
+            vllm_config, caller="DllmMockLlada2ForCausalLM.__init__"
+        )
         hf = vllm_config.model_config.hf_config
         self.hidden_size = int(getattr(hf, "hidden_size", 32))
         self.vocab_size = int(getattr(hf, "vocab_size", 256))
+        # Register one attention layer so vLLM KV-cache discovery yields
+        # non-empty specs in full engine initialization paths.
+        self.mock_attention = Attention(
+            num_heads=1,
+            head_size=self.hidden_size,
+            scale=1.0,
+            num_kv_heads=1,
+            prefix="layers.0.attn",
+        )
 
     def embed_input_ids(self, input_ids: torch.Tensor) -> torch.Tensor:
         return torch.zeros(

@@ -11,13 +11,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from vllm_dllm_plugin.scheduler import (
+from dllm_plugin.scheduler import (
     DllmRequestState,
     DllmWorkerResult,
 )
-from vllm_dllm_plugin.scheduler import (
+from dllm_plugin.scheduler import (
     DllmScheduler as DllmSchedulerHelper,
 )
+from dllm_plugin.validation import assert_compatible_stack
 
 try:
     from vllm.v1.core.sched.scheduler import Scheduler as VllmScheduler
@@ -71,6 +72,10 @@ class DllmRuntimeScheduler(VllmScheduler):
                 "`uv sync --group dev --extra vllm`.",
             )
         super().__init__(*args, **kwargs)
+        assert_compatible_stack(
+            self.vllm_config,
+            caller="DllmRuntimeScheduler.__init__",
+        )
         self._dllm_helper = DllmSchedulerHelper()
 
     def add_request(self, request: Any) -> None:
