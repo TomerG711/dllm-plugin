@@ -7,16 +7,35 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from dllm_plugin.config import (
-    DLLM_MOCK_STACK_MODEL_ID,
-    DRAFT_SIZE,
-)
+from dllm_plugin.config import DLLM_MOCK_STACK_MODEL_ID, DRAFT_SIZE
 from dllm_plugin.remasking import Llada2DefaultRemaskingPolicy
-from dllm_plugin.validation import assert_compatible_stack
-from dllm_plugin.worker import DllmWorker as DllmWorkerHelper
-from dllm_plugin.worker import DllmWorkerStep
+from dllm_plugin.validation import (
+    assert_compatible_stack,
+    assert_runtime_worker_v2_model_runner,
+)
+from dllm_plugin.worker import DllmWorker, DllmWorkerStep
 
 _MISSING = object()
+
+try:
+    from vllm.tracing import instrument
+except ImportError:  # pragma: no cover
+    # ``vllm`` not installed (e.g. CI without ``--extra vllm``): no-op decorator.
+    def instrument(
+        obj: Any | None = None,
+        *,
+        span_name: str = "",
+        attributes: dict[str, str] | None = None,
+        record_exception: bool = True,
+    ) -> Any:
+        if obj is None:
+
+            def _partial(fn: Any) -> Any:
+                return fn
+
+            return _partial
+        return obj
+
 
 try:
     from vllm.v1.outputs import DraftTokenIds
@@ -163,10 +182,11 @@ def resolve_runtime_block_logits(
 
 def run_block_contract_from_model_output(
     *,
-    helper: DllmWorkerHelper,
+    helper: DllmWorker,
     request_id: str,
     input_draft: list[int],
     logits: Any,
+    remasking_config: Mapping[str, Any] | None = None,
 ) -> DllmWorkerStep:
     """Apply one helper-level remask step using model-provided logits."""
 
@@ -175,6 +195,7 @@ def run_block_contract_from_model_output(
         input_draft=input_draft,
         logits=logits,
         policy=Llada2DefaultRemaskingPolicy(),
+        remasking_config=remasking_config,
     )
 
 
@@ -240,88 +261,46 @@ class DllmRuntimeWorker(VllmGPUWorker):
             )
         super().__init__(*args, **kwargs)
         assert_compatible_stack(self.vllm_config, caller="DllmRuntimeWorker.__init__")
-        # Reuse helper to keep one source of truth for v2 requirement and draft
-        # block shape validations.
-        self._dllm_helper = DllmWorkerHelper(require_v2_model_runner=True)
-        self._dllm_last_draft_token_ids: DraftTokenIds | None = None
-        self._dllm_expected_draft_req_ids: set[str] | None = None
-
-    def execute_model(self, scheduler_output: Any) -> Any:
-        output = super().execute_model(scheduler_output)
-        # Only process concrete model outputs from last PP stage.
-        if output is None or not hasattr(output, "sampled_token_ids"):
-            return output
-
-        expected_req_ids = set(output.req_ids)
-        next_req_ids: list[str] = []
-        next_blocks: list[list[int]] = []
-        for idx, (req_id, _sampled_token_ids) in enumerate(
-            zip(output.req_ids, output.sampled_token_ids, strict=True),
-        ):
-            input_draft = validate_runtime_input_draft(
-                request_id=req_id,
-                input_draft=scheduler_output.scheduled_spec_decode_tokens.get(req_id),
-                draft_size=self._dllm_helper.draft_size,
-            )
-            block_logits = resolve_runtime_block_logits(
-                model_output=output,
-                request_id=req_id,
-                request_index=idx,
-                draft_size=self._dllm_helper.draft_size,
-                vllm_config=self.vllm_config,
-            )
-            step = run_block_contract_from_model_output(
-                helper=self._dllm_helper,
-                request_id=req_id,
-                input_draft=list(input_draft),
-                logits=block_logits,
-            )
-            output.sampled_token_ids[idx] = list(step.sampled_token_ids)
-            next_req_ids.append(req_id)
-            next_blocks.append(list(self._dllm_helper.take_draft_token_ids(step)))
-
-        validate_runtime_draft_handoff_coverage(
-            expected_req_ids=expected_req_ids,
-            produced_req_ids=next_req_ids,
+        assert_runtime_worker_v2_model_runner(
+            use_v2_model_runner=self.use_v2_model_runner,
+            caller="DllmRuntimeWorker.__init__",
         )
-        self._dllm_expected_draft_req_ids = expected_req_ids
-        self._dllm_last_draft_token_ids = (
-            cast(Any, DraftTokenIds)(
-                req_ids=next_req_ids,
-                draft_token_ids=next_blocks,
-            )
-            if next_req_ids
-            else None
-        )
-        return output
+        self._dllm_helper = DllmWorker(require_v2_model_runner=True)
+
+    @instrument(span_name="Init device")
+    def init_device(self) -> None:
+        """Install :class:`~dllm_plugin.gpu_model_runner.DllmGPUModelRunner` for v2."""
+        super().init_device()
+        if getattr(self, "use_v2_model_runner", False):
+            from dllm_plugin.gpu_model_runner import DllmGPUModelRunner
+
+            self.model_runner = DllmGPUModelRunner(self.vllm_config, self.device)
 
     def take_draft_token_ids(self) -> DraftTokenIds | None:
-        draft_token_ids = self._dllm_last_draft_token_ids
-        if draft_token_ids is not None:
-            self._dllm_last_draft_token_ids = None
-        else:
-            draft_token_ids = super().take_draft_token_ids()
-        if draft_token_ids is None:
-            return None
-        expected_req_ids = self._dllm_expected_draft_req_ids
-        if expected_req_ids is not None:
-            validate_runtime_draft_handoff_coverage(
-                expected_req_ids=expected_req_ids,
-                produced_req_ids=list(draft_token_ids.req_ids),
-            )
-            self._dllm_expected_draft_req_ids = None
-        for req_id, next_block in zip(
-            draft_token_ids.req_ids,
-            draft_token_ids.draft_token_ids,
-            strict=True,
-        ):
-            self._dllm_helper.take_draft_token_ids(
-                DllmWorkerStep(
-                    request_id=req_id,
-                    sampled_token_ids=(),
-                    next_input_block=tuple(next_block),
-                ),
-            )
+        """Prefer dLLM runner hook ``take_dllm_draft_token_ids`` when present.
+
+        Upstream spec decode uses ``model_runner.take_draft_token_ids``; dLLM blocks use
+        runner ``take_dllm_draft_token_ids`` when implemented (see gpu_model_runner).
+        """
+        mr = self.model_runner
+        take_dllm = getattr(mr, "take_dllm_draft_token_ids", None)
+        if callable(take_dllm):
+            draft_token_ids = take_dllm()
+            if draft_token_ids is not None:
+                for req_id, next_block in zip(
+                    draft_token_ids.req_ids,
+                    draft_token_ids.draft_token_ids,
+                    strict=True,
+                ):
+                    self._dllm_helper.take_draft_token_ids(
+                        DllmWorkerStep(
+                            request_id=req_id,
+                            sampled_token_ids=(),
+                            next_input_block=tuple(next_block),
+                        ),
+                    )
+                return draft_token_ids
+        draft_token_ids = super().take_draft_token_ids()
         return draft_token_ids
 
 

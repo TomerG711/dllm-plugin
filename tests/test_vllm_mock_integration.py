@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.gpu_memory import gpu_memory_utilization, kv_cache_memory_bytes
+
 pytest.importorskip("vllm")
 torch = pytest.importorskip("torch")
 
@@ -32,6 +34,8 @@ def test_vllm_mock_stack_end_to_end_gpu(monkeypatch: pytest.MonkeyPatch) -> None
         pipeline_parallel_size=1,
         max_model_len=128,
         max_num_seqs=1,
+        gpu_memory_utilization=gpu_memory_utilization(),
+        kv_cache_memory_bytes=kv_cache_memory_bytes(),
         load_format="dummy",
         scheduler_cls="dllm_plugin.Scheduler",
         worker_cls="dllm_plugin.Worker",

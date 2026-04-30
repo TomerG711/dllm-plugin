@@ -14,13 +14,35 @@ git:
 gpu:
   count: 1
 
-# Optional cluster-specific scheduling (defaults are empty = portable).
-# Set nodeSelector / extraTolerations for your GPU nodes (see README.md).
+# Pytest targets (GPU job): mock-stack smoke, MRV2 subclass + structured-output regex,
+# and two-phase contract imports (needs ``--extra vllm``).
+tests:
+  # One ``uv run pytest`` per entry so each GPU LLM runs in a fresh Python process
+  # (avoids CUDA illegal access on back-to-back inits in the same interpreter).
+  pytestPaths:
+    - tests/test_vllm_mock_integration.py
+    - tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py::test_gpu_injects_dllm_mrv2_via_monkeypatch_stock_worker
+    - tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py::test_gpu_dllm_stack_structured_output_regex_grammar
+    - tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py::test_gpu_runtime_adapters_strict_stack_regex_structured_output
+    - tests/test_two_phase_dllm.py
+
+# Cluster GPU pool: match dedicated GPU node taints (see README).
+# The jounce.io L4 pool uses this alongside the standard nvidia.com/gpu taint
+# (the Job template always includes the nvidia.com/gpu toleration).
 scheduling:
   nodeSelector: {}
-  extraTolerations: []
+  extraTolerations:
+    - key: jounce.io/nodetype
+      operator: Equal
+      value: L4
+      effect: NoSchedule
 
 resources:
   cpu: "6"
   memory: 24Gi
   ephemeralStorage: 40Gi
+
+# Extra env for pytest (see ``tests/gpu_memory.py``).
+# Shared CI GPUs often have little free VRAM; keep KV reservation small.
+testEnv:
+  DLLM_TEST_GPU_MEMORY_UTILIZATION: "0.08"

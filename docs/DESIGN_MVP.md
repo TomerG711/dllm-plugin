@@ -142,6 +142,20 @@ sequenceDiagram
   DllmSched->>DllmSched: spec_token_ids equals next block
 ```
 
+On the **v2 GPU model runner** stack, the engine actually performs **two phases** per step: `GPUModelRunner.execute_model` runs the forward and returns `None` on the last pipeline rank while stashing hidden states in `execute_model_state`; the driver then calls `sample_tokens(grammar_output)`, which applies structured-output bitmasks (when present), runs sampling/remasking, and builds `ModelRunnerOutput`. The diagram above is logically accurate for data flow; timing-wise, remap “forward” to phase one and “set sampled_token_ids / drafts” to phase two (`sample` / `sample_tokens`).
+
+### 6.1 Two-phase API alignment (v2)
+
+The plugin installs `DllmGPUModelRunner`, which subclasses **`HookedGPUModelRunner`** (`dllm_plugin.vllm_gpu_model_runner_fork`): that intermediate class tracks **v0.20.x** `GPUModelRunner.prepare_inputs` and `sample_tokens` with small hooks (expand-map width, PP tensor width, optional speculator phase, `execute_model` prelude). **`DllmGPUModelRunner` only overrides `sample`** for dLLM block remasking—plus hook implementations and `take_dllm_draft_token_ids`—while inheriting phase-two orchestration from the fork. Stock `apply_grammar_bitmask` runs when `GrammarOutput` is provided. Scheduler extras for frontier structured-output repair (`dllm_so_*` on `SchedulerOutput`) are captured in `before_execute_model` and consumed next to `grammar_output` in phase two—there is no separate grammar application on `execute_model` outputs.
+
+`prepare_inputs` stays aligned with tag **v0.20.0** via **`get_expand_idx_mapping_block_size`** (widened further in `DllmGPUModelRunner` for dLLM architectures); upstream adoption of the same seam would shrink the fork.
+
+**Mutual exclusion:** do not combine Eagle (or other target+draft-model) speculative decoding with the dLLM block path on the same run; the runner skips `speculator.propose` when servicing a dLLM block batch and emits drafts via the same `take_draft_token_ids` hook spec decode uses.
+
+**CUDA graphs:** prefer `enforce_eager` or non-`FULL` cudagraph modes for dLLM until any capture/replay path is validated against the custom `sample` branch; treating this like other non-standard sampling paths is the supported MVP stance.
+
+**Async scheduling + structured outputs:** Contract tests and GPU smoke use `async_scheduling=False`. The fork still handles `use_async_scheduling` on the dLLM block path, but **async + SO + dLLM** is **not CI-validated**—document as unsupported for mock-stack MVP until dedicated integration tests land (orchestration **#19**).
+
 **Commit-0:** In `update_from_output`, if `sampled_token_ids` is empty for a request, the scheduler rolls back `num_computed_tokens` by the number of tokens scheduled that step (typically `DRAFT_SIZE` in this MVP design).
 
 ---
@@ -155,6 +169,7 @@ sequenceDiagram
 | `SchedulerOutput.num_scheduled_tokens` (per request) | Set to `DRAFT_SIZE` for decode steps using the block path. |
 | `ModelRunnerOutput.sampled_token_ids` | **Committed** token IDs only, length 0..`DRAFT_SIZE` (may be empty). |
 | Worker `take_draft_token_ids()` | Returns **next-step input block** packaged as `DraftTokenIds` for engine → scheduler. |
+| Runner `take_dllm_draft_token_ids()` | **dLLM v2 only:** pops remasked next block after phase two; worker `take_draft_token_ids` calls this when defined (separate name from upstream spec-decode runner hooks — issue #10). |
 | Scheduler `update_draft_token_ids` / `update_draft_token_ids_in_output` | Store next block into `spec_token_ids`; **must not** apply AR draft grammar to dLLM blocks (override for structured output / async). |
 
 Mutually exclusive with true speculative decoding on the same requests: operators must not enable spec-decode + dLLM plugin stack together for the same run mode.

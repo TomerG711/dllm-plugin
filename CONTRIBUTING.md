@@ -23,7 +23,7 @@ The **vllm-project** org may require the **DCO** GitHub check to pass on PRs. Th
   uv sync --group dev
   ```
 
-- **Runtime vLLM** is an **optional extra** with a **bounded** spec (`vllm>=0.14,<0.15`) so installs stay on tested API lines; widen only with lock refresh + optional smoke. macOS and other environments without CUDA wheels can still develop and run tests that skip vLLM-specific cases. On Linux (e.g. CI or GPU dev boxes), install with:
+- **Runtime vLLM** is an **optional extra** with a **bounded** spec (`vllm>=0.20,<0.21`) so installs stay on tested API lines; widen only with lock refresh + optional smoke. macOS and other environments without CUDA wheels can still develop and run tests that skip vLLM-specific cases. On Linux (e.g. CI or GPU dev boxes), install with:
 
   ```bash
   uv sync --group dev --extra vllm
@@ -108,6 +108,15 @@ uv run pytest
 ```
 
 Use `# ty: ignore` sparingly; prefer fixing types or narrowing stubs.
+
+## Rebasing `HookedGPUModelRunner` (vLLM API fork)
+
+[`dllm_plugin/vllm_gpu_model_runner_fork.py`](dllm_plugin/vllm_gpu_model_runner_fork.py) embeds **v0.20.x** `GPUModelRunner.prepare_inputs` and `sample_tokens` plus hooks. When moving the **`vllm`** pin or merging upstream fixes:
+
+1. Use the **rebase baseline** named in that module’s docstring (today **v0.20.0** on [github.com/vllm-project/vllm](https://github.com/vllm-project/vllm)); update the docstring if the tracked tag changes.
+2. Diff upstream **`GPUModelRunner.prepare_inputs`** and **`GPUModelRunner.sample_tokens`** against the fork and port deliberate upstream changes.
+3. Keep hook seams intact: **`get_expand_idx_mapping_block_size`**, **`get_pp_receive_max_sample_len`**, **`adapt_sampler_output_for_pp_broadcast`**, **`should_run_speculator_proposal_phase`**, **`before_execute_model`**, and the **`execute_model`** kwargs forwarding block.
+4. Run **`uv run pytest`**; on Linux with CUDA wheels available, **`uv sync --group dev --extra vllm`** then pytest again; use GPU / Helm smoke when touching sampling or PP paths.
 
 ## Upstream alignment
 
