@@ -27,6 +27,8 @@ uv sync --group dev --extra vllm
   and paste the URL into the **active plugin PR** so operators are not left searching
   for the “other half” of the integration.
 
+- **Behavioral tests + EngineCore shim (issue [#35](https://github.com/vllm-project/dllm-plugin/issues/35)):** see [TESTING_DLLM_SEMANTICS.md](TESTING_DLLM_SEMANTICS.md) for pytest markers, CI matrix, and the PR **#36391** test-only patch.
+
 - vLLM plugin loading enabled:
 
 ```bash

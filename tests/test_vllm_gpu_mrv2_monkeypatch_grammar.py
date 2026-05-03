@@ -8,6 +8,7 @@ On CPU-only runners tests skip.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -125,7 +126,9 @@ def test_gpu_dllm_stack_structured_output_regex_grammar(
     )
     assert outputs
     assert outputs[0].outputs
-    assert outputs[0].outputs[0].token_ids
+    toks = outputs[0].outputs[0].token_ids
+    text = llm.get_tokenizer().decode(toks, skip_special_tokens=True).strip()
+    assert re.fullmatch(r"[012]+", text), f"regex SO violated decoded={text!r}"
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires CUDA GPU")
@@ -182,4 +185,6 @@ def test_gpu_runtime_adapters_strict_stack_regex_structured_output(
         [TokensPrompt(prompt_token_ids=[1, 2, 3, 4])],
         sampling_params=sp,
     )
-    assert outputs[0].outputs[0].token_ids
+    toks = outputs[0].outputs[0].token_ids
+    text = llm.get_tokenizer().decode(toks, skip_special_tokens=True).strip()
+    assert re.fullmatch(r"[012]+", text), f"regex SO violated decoded={text!r}"
