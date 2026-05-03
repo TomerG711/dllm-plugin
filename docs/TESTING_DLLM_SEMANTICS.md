@@ -54,7 +54,7 @@ export VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH=1
 |------|----------------|-------------------------|-----------------------------------------------|----------------|
 | A — component (CPU) | `tests/test_scheduler.py`, `tests/test_runtime_scheduler_draft_output.py` | yes | yes (when `DraftTokenIds` import works) | optional (same image) |
 | B — EngineCore shim (CPU) | `tests/test_engine_core_draft_hook_patch.py` | skipped (no vLLM) | **yes** | optional |
-| C — GPU mock-stack + patch | `tests/test_dllm_gpu_integration_semantics.py` | skip (no CUDA) | skip (no CUDA) | add path when promoting |
+| C — GPU mock-stack + patch | `tests/test_dllm_gpu_integration_semantics.py` | skip (no CUDA) | skip (no CUDA) | **yes** (default chart) |
 | D — GPU grammar / MRV2 | `tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py` | skip | skip | **yes** (default chart) |
 | E — mock `LLM.generate` | `tests/test_vllm_mock_integration.py` | skip | skip | **yes** |
 
