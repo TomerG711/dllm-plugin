@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -74,9 +74,15 @@ def test_validate_draft_lengths_rejects_wrong_block_width() -> None:
 
 
 def test_update_draft_token_ids_rejects_wrong_block_width() -> None:
+    """``update_draft_token_ids`` rejects drafts via ``_validate_draft_lengths``."""
+
     host = SimpleNamespace(
         requests={"r1": _req()},
         _dllm_helper=DllmScheduler(),
+    )
+    host._validate_draft_lengths = MethodType(
+        DllmRuntimeScheduler._validate_draft_lengths,
+        host,
     )
     bad = DraftTokenIds(req_ids=["r1"], draft_token_ids=[[7, 8]])
     with pytest.raises(ValueError, match="draft token block length mismatch"):
