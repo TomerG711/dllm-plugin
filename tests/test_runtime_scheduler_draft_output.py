@@ -71,3 +71,34 @@ def test_validate_draft_lengths_rejects_wrong_block_width() -> None:
     bad = DraftTokenIds(req_ids=["r1"], draft_token_ids=[[1] * (DRAFT_SIZE + 1)])
     with pytest.raises(ValueError, match="draft token block length mismatch"):
         DllmRuntimeScheduler._validate_draft_lengths(cast(Any, host), bad)
+
+
+def test_update_draft_token_ids_rejects_wrong_block_width() -> None:
+    host = SimpleNamespace(
+        requests={"r1": _req()},
+        _dllm_helper=DllmScheduler(),
+    )
+    bad = DraftTokenIds(req_ids=["r1"], draft_token_ids=[[7, 8]])
+    with pytest.raises(ValueError, match="draft token block length mismatch"):
+        DllmRuntimeScheduler.update_draft_token_ids(cast(Any, host), bad)
+
+
+def test_update_draft_token_ids_in_output_clears_num_invalid_spec_tokens() -> None:
+    host = SimpleNamespace(
+        requests={"r1": _req()},
+        _dllm_helper=DllmScheduler(),
+    )
+    placeholder = [10, 11, 12, 13]
+    sched = SimpleNamespace(
+        scheduled_spec_decode_tokens={"r1": list(placeholder)},
+        num_invalid_spec_tokens={"r1": 99},
+    )
+    draft = DraftTokenIds(req_ids=["r1"], draft_token_ids=[[1, 2, 3, 4]])
+
+    DllmRuntimeScheduler.update_draft_token_ids_in_output(
+        cast(Any, host),
+        draft,
+        sched,
+    )
+
+    assert sched.num_invalid_spec_tokens == {}

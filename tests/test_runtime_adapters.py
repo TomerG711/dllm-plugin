@@ -231,3 +231,48 @@ def test_runtime_worker_rejects_missing_mapping_coverage_for_request() -> None:
             draft_size=4,
             vllm_config=vllm_config,
         )
+
+
+def test_resolve_runtime_block_logits_rejects_wrong_score_row_count() -> None:
+    from dllm_plugin.runtime_worker import resolve_runtime_block_logits
+
+    output = SimpleNamespace(dllm_block_logits={"r1": [[1.0] * 8, [1.0] * 8]})
+    vllm_config = SimpleNamespace(
+        model_config=SimpleNamespace(
+            hf_config=SimpleNamespace(
+                architectures=("DllmMockLlada2StackTest",),
+                vocab_size=32,
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="expected 4 rows, got 2"):
+        resolve_runtime_block_logits(
+            model_output=output,
+            request_id="r1",
+            request_index=0,
+            draft_size=4,
+            vllm_config=vllm_config,
+        )
+
+
+def test_resolve_runtime_block_logits_rejects_inconsistent_vocab_widths() -> None:
+    from dllm_plugin.runtime_worker import resolve_runtime_block_logits
+
+    rows = [[1.0] * 8, [1.0] * 16, [1.0] * 8, [1.0] * 8]
+    output = SimpleNamespace(dllm_block_logits={"r1": rows})
+    vllm_config = SimpleNamespace(
+        model_config=SimpleNamespace(
+            hf_config=SimpleNamespace(
+                architectures=("DllmMockLlada2StackTest",),
+                vocab_size=32,
+            ),
+        ),
+    )
+    with pytest.raises(ValueError, match="inconsistent vocab size"):
+        resolve_runtime_block_logits(
+            model_output=output,
+            request_id="r1",
+            request_index=0,
+            draft_size=4,
+            vllm_config=vllm_config,
+        )

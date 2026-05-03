@@ -10,6 +10,23 @@ Upstream design references: [DESIGN_MVP.md](DESIGN_MVP.md) §4 / §6–7,
 [CONTRACTS.md](CONTRACTS.md). Milestone mapping: [#19](https://github.com/vllm-project/dllm-plugin/issues/19).
 Hook pins and wheel drift: [#2](https://github.com/vllm-project/dllm-plugin/issues/2).
 
+## Issue [#35](https://github.com/vllm-project/dllm-plugin/issues/35) coverage checklist
+
+This matrix is the **intended** semantic surface for closing #35 alongside the
+markers above (not every cell needs a dedicated file; some items share one test).
+
+| Area | What is covered | Primary tests |
+|------|-----------------|---------------|
+| Scheduler block state | `spec_token_ids` matches `scheduled_spec_decode_tokens` across partial commits and `update_draft_token_ids` | `tests/test_scheduler.py` |
+| Scheduler negatives | Overlong `sampled_token_ids`, wrong draft length, grammar-constrained draft rewrite rejection | `tests/test_scheduler.py` |
+| Worker handoff | `take_draft_token_ids` / `DllmWorkerStep` length checks, v2 runner gate | `tests/test_worker.py`, `tests/test_validation.py` |
+| Runtime logits | Row count, vocab width consistency, missing mapping vs mock arch | `tests/test_runtime_adapters.py` |
+| Runtime scheduler drafts | Pad/truncate in `update_draft_token_ids_in_output`, empty `num_invalid_spec_tokens`, `_validate_draft_lengths`, `update_draft_token_ids` | `tests/test_runtime_scheduler_draft_output.py` |
+| EngineCore hook | PR **#36391**-aligned shim | `tests/test_engine_core_draft_hook_patch.py` |
+| GPU mock stack | Multi-step `LLM.generate` with hook; **v1 model runner** rejected under strict validation | `tests/test_dllm_gpu_integration_semantics.py` |
+| GPU SO / grammar | MRV2 monkeypatch path | `tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py` |
+| End-to-end mock | `LLM.generate` on CUDA | `tests/test_vllm_mock_integration.py` |
+
 ## EngineCore test shim
 
 Stock PyPI vLLM in the `0.20.x` range may still gate

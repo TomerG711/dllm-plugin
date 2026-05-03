@@ -151,3 +151,60 @@ def test_update_draft_token_ids_in_output_rejects_grammar_constrained_path() -> 
             next_blocks_by_request_id={"r1": (9,) * DRAFT_SIZE},
             grammar_constrained=True,
         )
+
+
+def test_multi_step_spec_aligns_scheduled_with_state_after_worker_handoff() -> None:
+    """After partial commit + explicit next block, the next schedule matches spec."""
+
+    sched = DllmScheduler()
+    state = DllmRequestState(request_id="r1")
+    out1 = sched.schedule_decode_step(requests=((state, (1, 2, 3)),))
+    assert out1.requests[0].scheduled_spec_decode_tokens == state.spec_token_ids
+
+    sched.update_from_output(
+        states={"r1": state},
+        worker_results=(DllmWorkerResult(request_id="r1", sampled_token_ids=(99,)),),
+    )
+    next_block = tuple(range(DRAFT_SIZE))
+    sched.update_draft_token_ids(state=state, next_input_block=next_block)
+    assert state.spec_token_ids == next_block
+
+    out2 = sched.schedule_decode_step(requests=((state, ()),))
+    assert out2.requests[0].scheduled_spec_decode_tokens == next_block
+    assert out2.requests[0].scheduled_spec_decode_tokens == state.spec_token_ids
+
+
+def test_update_from_output_rejects_overlong_sampled_token_ids() -> None:
+    sched = DllmScheduler()
+    state = DllmRequestState(request_id="r1")
+    sched.schedule_decode_step(requests=((state, ()),))
+    too_long = tuple(range(DRAFT_SIZE + 1))
+    with pytest.raises(ValueError, match="exceeds draft_size"):
+        sched.update_from_output(
+            states={"r1": state},
+            worker_results=(
+                DllmWorkerResult(request_id="r1", sampled_token_ids=too_long),
+            ),
+        )
+
+
+def test_update_draft_token_ids_rejects_wrong_block_length() -> None:
+    sched = DllmScheduler()
+    state = DllmRequestState(request_id="r1")
+    sched.schedule_decode_step(requests=((state, ()),))
+    with pytest.raises(ValueError, match="block length must be draft_size"):
+        sched.update_draft_token_ids(
+            state=state,
+            next_input_block=(0,) * (DRAFT_SIZE - 1),
+        )
+
+
+def test_update_draft_token_ids_in_output_rejects_wrong_block_length() -> None:
+    sched = DllmScheduler()
+    state = DllmRequestState(request_id="r1")
+    output = sched.schedule_decode_step(requests=((state, ()),))
+    with pytest.raises(ValueError, match="block length must be draft_size"):
+        sched.update_draft_token_ids_in_output(
+            output=output,
+            next_blocks_by_request_id={"r1": (0,) * (DRAFT_SIZE + 2)},
+        )
