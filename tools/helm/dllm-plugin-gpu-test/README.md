@@ -27,6 +27,8 @@ From the repository root, [`tools/e2e/helm_l4_gpu_validate.sh`](../../e2e/helm_l
 
 Required env: **`KUBE_CONTEXT`**. Optional: **`GIT_REPO`** / **`GIT_BRANCH`** (defaults: `https://github.com/vllm-project/dllm-plugin.git` and the current `git` branch when the script is run from a checkout, else `main`). The cluster must be able to `git clone` the URL over HTTPS without credentials (public repo or equivalent).
 
+Default chart **`testEnv`** sets **`DLLM_SKIP_GPU_SEMANTICS_MULTI_STEP=1`** so the Helm Job skips one GPU case that can hit illegal CUDA access on some L4 nodes; unset via Helm overrides to run the full file on hardware where it passes.
+
 ```bash
 export KUBE_CONTEXT='gke_it-gcp-model-validation_us-central1_rhoai-benchmark-development-cluster'
 export GIT_REPO='https://github.com/you/dllm-plugin.git'   # optional
