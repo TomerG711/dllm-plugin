@@ -67,9 +67,12 @@ def register_dllm() -> None:
     DEBUG with ``exc_info`` and returns. (``find_spec`` can succeed when a full
     ``import vllm`` would still fail.)
 
-    When ``VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK`` is truthy, also applies the
-    EngineCore PR **#36391** runtime patch (see ``dllm_plugin.engine_core_draft_hook``).
-    Disabled when ``VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH`` is set.
+    When ``VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK`` is truthy, calls
+    ``apply_engine_core_draft_hook_patch_if_needed()`` after registration (see
+    ``dllm_plugin.engine_core_draft_hook``). The skip env
+    ``VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH`` is enforced **inside** that
+    helper (no-op), not by omitting the call—so with both envs set, ``apply_*``
+    still runs and returns without patching.
     """
     if importlib.util.find_spec("vllm") is None:
         return
