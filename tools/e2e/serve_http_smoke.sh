@@ -60,7 +60,6 @@ trap cleanup EXIT
 echo "serve_http_smoke: starting vllm serve on 127.0.0.1:${PORT} (model ${SERVED_NAME})" >&2
 uv run vllm serve "${MODEL_DIR}" \
   --tokenizer "${MODEL_DIR}" \
-  --skip-tokenizer-init \
   --served-model-name "${SERVED_NAME}" \
   --host 127.0.0.1 \
   --port "${PORT}" \
