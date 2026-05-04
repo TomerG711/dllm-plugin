@@ -17,6 +17,8 @@ gpu:
 # Pytest targets (GPU job): mock-stack smoke, MRV2 subclass + structured-output regex,
 # and two-phase contract imports (needs ``--extra vllm``).
 tests:
+  # After pytest, run OpenAI HTTP smoke (``vllm serve`` + curl); requires GPU.
+  runServeHttpSmoke: true
   # One ``uv run pytest`` per entry so each GPU LLM runs in a fresh Python process
   # (avoids CUDA illegal access on back-to-back inits in the same interpreter).
   pytestPaths:

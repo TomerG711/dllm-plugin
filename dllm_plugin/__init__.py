@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -65,6 +66,10 @@ def register_dllm() -> None:
     registering. If the spec exists but importing ``ModelRegistry`` fails, logs
     DEBUG with ``exc_info`` and returns. (``find_spec`` can succeed when a full
     ``import vllm`` would still fail.)
+
+    When ``VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK`` is truthy, also applies the
+    EngineCore PR **#36391** runtime patch (see ``dllm_plugin.engine_core_draft_hook``).
+    Disabled when ``VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH`` is set.
     """
     if importlib.util.find_spec("vllm") is None:
         return
@@ -99,6 +104,16 @@ def register_dllm() -> None:
             arch,
             DLLM_MOCK_MODEL_CLASS_FQCN,
         )
+
+    from dllm_plugin.config import DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK_ENV_VAR
+
+    _apply_raw = os.environ.get(DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK_ENV_VAR, "")
+    if _apply_raw.strip().lower() in {"1", "true", "yes", "on"}:
+        from dllm_plugin.engine_core_draft_hook import (
+            apply_engine_core_draft_hook_patch_if_needed,
+        )
+
+        apply_engine_core_draft_hook_patch_if_needed()
 
 
 __all__ = [

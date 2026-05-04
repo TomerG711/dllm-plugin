@@ -73,6 +73,8 @@ GitHub Actions runs **`uv sync --locked --group dev`**, then **`uv run pre-commi
 
 The **`ci`** workflow (`.github/workflows/ci.yml`) runs a **Python matrix** job **without** the **`vllm`** extra (GPU-only tests skip there) and a second **`vllm-extra`** job on **Python 3.12** that runs **`uv sync --locked --group dev --extra vllm`** and **`uv run pytest -q -rs`**. CPU tests that `import vllm` must pass in **`vllm-extra`** when Linux wheels resolve. See **[docs/TESTING_DLLM_SEMANTICS.md](docs/TESTING_DLLM_SEMANTICS.md)** for markers, the EngineCore PR **#36391** shim, and the test matrix (issue **#35**).
 
+**GPU / Helm:** the chart **`tools/helm/dllm-plugin-gpu-test`** can run **`tools/e2e/serve_http_smoke.sh`** after pytest when **`tests.runServeHttpSmoke`** is `true` (default): OpenAI HTTP smoke against **`vllm serve`** (not exercised on GitHub **`ubuntu-latest`**). See **[docs/OPERATOR_LLaDA2.md](docs/OPERATOR_LLaDA2.md)**.
+
 Maintainers can also run the **Optional vLLM smoke** workflow (**`workflow_dispatch`** in `.github/workflows/optional-vllm-smoke.yml` ) for an extra signal after pin changes.
 
 **Optional vLLM smoke** is **best-effort** on **`ubuntu-latest`**: **`uv sync --extra vllm`** may fail if PyPI has no suitable wheel or pins break on that image (see header comments in the workflow YAML). Dispatch it after lock/extra changes and note success or failure for the team until behavior is stable.

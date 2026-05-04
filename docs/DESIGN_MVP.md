@@ -86,6 +86,8 @@ flowchart TB
 
 **Core dependency:** After the upstream hook lands in vLLM, `Hook` runs whenever a model step executed and draft IDs exist—not only when `speculative_config` is set. Until then, document a **minimum vLLM version or git SHA** once integration tests pin it (the canonical optional-extra bound lives in `pyproject.toml`; unlike bart-style plugins that often require vLLM at install time, this repo keeps vLLM optional for contributor ergonomics). The exact release containing the hook is tracked via [vllm#36155](https://github.com/vllm-project/vllm/issues/36155), with human-readable tracking context maintained in README and plugin issue [#2](https://github.com/vllm-project/dllm-plugin/issues/2).
 
+**Interim mitigation (until the pin includes native hook behavior):** the plugin ships a **string-fragile** optional runtime patch (PR **#36391** semantics) gated by `VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK`, applied from `register_dllm()` when that env is set, plus the pytest context manager in `dllm_plugin.engine_core_draft_hook`. See `docs/CONTRACTS.md`, `docs/OPERATOR_LLaDA2.md`, and `docs/TESTING_DLLM_SEMANTICS.md`. Use `VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH=1` to disable all patching.
+
 ---
 
 ## 5. Registration and runtime

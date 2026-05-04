@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import dllm_plugin.engine_core_draft_hook as ech_mod
 from tests.support.engine_core_draft_hook import (
     engine_core_draft_hook_patch_needed,
     patch_engine_core_draft_hook_semantics,
@@ -105,9 +106,7 @@ def test_patch_compiles_when_legacy_wheel(monkeypatch: pytest.MonkeyPatch) -> No
     if not engine_core_draft_hook_patch_needed():
         pytest.skip("installed vLLM already matches PR #36391 post_step layout")
 
-    from tests.support import engine_core_draft_hook as mod
-
-    compile_fn = mod._compile_patched_engine_core_methods
+    compile_fn = ech_mod._compile_patched_engine_core_methods  # noqa: SLF001
     post_fn, step_fn = compile_fn()
     assert callable(post_fn)
     assert callable(step_fn)
@@ -128,3 +127,41 @@ def test_skip_env_disables_patch(monkeypatch: pytest.MonkeyPatch) -> None:
         stub.model_executor.take_draft_token_ids.assert_not_called()
     else:
         stub.model_executor.take_draft_token_ids.assert_called_once()
+
+
+def test_apply_runtime_patch_idempotent_when_legacy_wheel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``apply_engine_core_draft_hook_patch_if_needed`` is safe to call twice."""
+
+    from vllm.v1.engine.core import EngineCore
+
+    monkeypatch.delenv("VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH", raising=False)
+    if not engine_core_draft_hook_patch_needed():
+        pytest.skip("installed vLLM already matches PR #36391 post_step layout")
+
+    orig_post = EngineCore.post_step
+    orig_step = EngineCore.step_with_batch_queue
+    try:
+        ech_mod._reset_runtime_patch_applied_for_tests()
+        ech_mod.apply_engine_core_draft_hook_patch_if_needed()
+        first_post = EngineCore.post_step
+        ech_mod.apply_engine_core_draft_hook_patch_if_needed()
+        assert EngineCore.post_step is first_post
+    finally:
+        EngineCore.post_step = orig_post
+        EngineCore.step_with_batch_queue = orig_step
+        ech_mod._reset_runtime_patch_applied_for_tests()
+
+
+def test_apply_runtime_patch_noop_twice_when_upstream_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    if engine_core_draft_hook_patch_needed():
+        pytest.skip("legacy EngineCore layout required for this assertion")
+
+    monkeypatch.delenv("VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH", raising=False)
+    ech_mod._reset_runtime_patch_applied_for_tests()
+    ech_mod.apply_engine_core_draft_hook_patch_if_needed()
+    ech_mod.apply_engine_core_draft_hook_patch_if_needed()
+    ech_mod._reset_runtime_patch_applied_for_tests()

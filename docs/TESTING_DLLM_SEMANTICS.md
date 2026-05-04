@@ -22,18 +22,20 @@ markers above (not every cell needs a dedicated file; some items share one test)
 | Worker handoff | `take_draft_token_ids` / `DllmWorkerStep` length checks, v2 runner gate | `tests/test_worker.py`, `tests/test_validation.py` |
 | Runtime logits | Row count, vocab width consistency, missing mapping vs mock arch | `tests/test_runtime_adapters.py` |
 | Runtime scheduler drafts | Pad/truncate in `update_draft_token_ids_in_output`, empty `num_invalid_spec_tokens`, `_validate_draft_lengths`, `update_draft_token_ids` | `tests/test_runtime_scheduler_draft_output.py` |
-| EngineCore hook | PR **#36391**-aligned shim | `tests/test_engine_core_draft_hook_patch.py` |
+| EngineCore hook | PR **#36391**-aligned patch (pytest context manager + optional runtime via `register_dllm`) | `dllm_plugin/engine_core_draft_hook.py`, `tests/test_engine_core_draft_hook_patch.py` |
+| HTTP OpenAI smoke | `vllm serve` + `/health` + `/v1/chat/completions` (`curl`); **not** default GitHub `ci` | `tools/e2e/serve_http_smoke.sh`; Helm when `tests.runServeHttpSmoke` |
 | GPU mock stack | Multi-step `LLM.generate` with hook; **v1 model runner** rejected under strict validation | `tests/test_dllm_gpu_integration_semantics.py` |
 | GPU SO / grammar | MRV2 monkeypatch path | `tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py` |
 | End-to-end mock | `LLM.generate` on CUDA | `tests/test_vllm_mock_integration.py` |
 
-## EngineCore test shim
+## EngineCore draft hook (tests + runtime)
 
 Stock PyPI vLLM in the `0.20.x` range may still gate
 `take_draft_token_ids()` / `update_draft_token_ids*` on `use_spec_decode`.
-[`tests/support/engine_core_draft_hook.py`](../tests/support/engine_core_draft_hook.py)
-applies a **test-only** patch matching PR **#36391** while the context manager is
-active, and **no-ops** when the installed engine already matches that behavior.
+
+- **Canonical implementation:** [`dllm_plugin/engine_core_draft_hook.py`](../dllm_plugin/engine_core_draft_hook.py) (`patch_engine_core_draft_hook_semantics`, `apply_engine_core_draft_hook_patch_if_needed`, `engine_core_draft_hook_patch_needed`).
+- **Tests:** [`tests/support/engine_core_draft_hook.py`](../tests/support/engine_core_draft_hook.py) re-exports the same API for backward-compatible imports and doc links.
+- **Runtime (`vllm serve`):** set `VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK=1` so `register_dllm()` applies a **permanent** in-process patch when the wheel still needs PR **#36391** semantics. See [`docs/OPERATOR_LLaDA2.md`](OPERATOR_LLaDA2.md) and [`docs/CONTRACTS.md`](CONTRACTS.md).
 
 Disable all patching (for debugging) with:
 
@@ -57,6 +59,7 @@ export VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH=1
 | C — GPU mock-stack + patch | `tests/test_dllm_gpu_integration_semantics.py` | skip (no CUDA) | skip (no CUDA) | **yes** (default chart) |
 | D — GPU grammar / MRV2 | `tests/test_vllm_gpu_mrv2_monkeypatch_grammar.py` | skip | skip | **yes** (default chart) |
 | E — mock `LLM.generate` | `tests/test_vllm_mock_integration.py` | skip | skip | **yes** |
+| F — HTTP `vllm serve` + `curl` | `tools/e2e/serve_http_smoke.sh` | skip (no GPU / no long-lived server) | skip | **yes** when `tests.runServeHttpSmoke` (default) |
 
 Manual optional smoke: `.github/workflows/optional-vllm-smoke.yml` (`workflow_dispatch`).
 
@@ -66,6 +69,7 @@ Manual optional smoke: `.github/workflows/optional-vllm-smoke.yml` (`workflow_di
 uv sync --group dev --extra vllm   # Linux/CUDA-capable host
 uv run pytest -q -m dllm_engine_patch
 uv run pytest -q -m dllm_gpu_integration   # needs GPU
+bash tools/e2e/serve_http_smoke.sh          # GPU + same env as operator doc
 ```
 
 ## Out of scope / skipped for MVP
@@ -83,3 +87,4 @@ with a pointer here and in [#19](https://github.com/vllm-project/dllm-plugin/iss
 | C | 4 / 6 — multi-step mock stack on GPU with hook shim |
 | D | 4 / 6 — grammar + bitmask path on GPU |
 | E | 6 — end-to-end `LLM.generate` smoke |
+| F | 6 — OpenAI HTTP server smoke (`vllm serve` + `curl`) |

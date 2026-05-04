@@ -98,6 +98,38 @@ runs `assert_runtime_worker_v2_model_runner`: if the v2 model runner is not enab
 (`VLLM_USE_V2_MODEL_RUNNER=1`), startup raises **ValueError** (issue [**#10**](https://github.com/vllm-project/dllm-plugin/issues/10)).
 With strict off, the same mismatch emits a **warning** instead.
 
+## EngineCore draft hook (runtime) and HTTP smoke
+
+On some PyPI **vLLM 0.20.x** wheels, `EngineCore` still ties the draft-token hook to
+speculative decoding until [vLLM PR #36391](https://github.com/vllm-project/vllm/pull/36391)
+ships in your build. For **`vllm serve`** and other engine processes, set:
+
+```bash
+export VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK=1
+```
+
+so `register_dllm()` applies the same **string-fragile** runtime patch described in
+`docs/CONTRACTS.md` and `dllm_plugin.engine_core_draft_hook`. Track pins and upstream
+in [issue #2](https://github.com/vllm-project/dllm-plugin/issues/2). Disable **all**
+patching (tests or runtime) with `VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH=1`.
+
+**HTTP smoke (mock stack, GPU):** from the plugin repository root, after
+`uv sync --group dev --extra vllm`:
+
+```bash
+export VLLM_PLUGINS=dllm
+export VLLM_USE_V2_MODEL_RUNNER=1
+export VLLM_ENABLE_V1_MULTIPROCESSING=0
+bash tools/e2e/serve_http_smoke.sh
+```
+
+The script starts `vllm serve` on `127.0.0.1` (port `8765` by default, overridable via
+`VLLM_DLLM_HTTP_SMOKE_PORT`), waits for `/health`, posts to `/v1/chat/completions` with
+`curl`, asserts a JSON `choices` field, then stops the server. It sets
+`VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK=1` internally for legacy wheels. The Helm chart
+`tools/helm/dllm-plugin-gpu-test` runs this script after pytest when
+`tests.runServeHttpSmoke` is `true` (default).
+
 ## First block initialization
 
 - The scheduler initializes `Request.spec_token_ids` for new requests when empty.
@@ -143,7 +175,9 @@ cluster does not use those taints, clear or replace them (see
 
 The Job runs **`tests.pytestPaths`** from `values.yaml`, including **mock-stack GPU smoke**,
 **`DllmGPUModelRunner` monkeypatch + regex structured output**, and **two-phase MRV2**
-contract tests—override `tests.pytestPaths` if you need a narrower run.
+contract tests—override `tests.pytestPaths` if you need a narrower run. When
+**`tests.runServeHttpSmoke`** is enabled (default), the Job also runs
+**`tools/e2e/serve_http_smoke.sh`** after pytest.
 
 ## Notes
 
