@@ -51,6 +51,7 @@ def test_gpu_mock_stack_multi_step_respects_max_tokens_with_engine_patch(
             load_format="dummy",
             scheduler_cls="dllm_plugin.Scheduler",
             worker_cls="dllm_plugin.Worker",
+            async_scheduling=False,
         )
         outputs = llm.generate(
             [TokensPrompt(prompt_token_ids=[1, 2, 3, 4])],
@@ -97,4 +98,5 @@ def test_gpu_dllm_stack_rejects_v1_model_runner_under_strict_validation(
             load_format="dummy",
             scheduler_cls="dllm_plugin.Scheduler",
             worker_cls="dllm_plugin.Worker",
+            async_scheduling=False,
         )
