@@ -21,21 +21,23 @@ scheduling:
 
 The default `extraTolerations` target that **jounce.io L4** pattern. If your pool uses a different taint, edit `values.yaml` or the pod stays `Pending`. Confirm with `kubectl describe node <gpu-node> | grep -A2 Taints`.
 
-## Maintainer: L4 deploy + validate loop
+## GPU Helm defaults
 
-From the repository root, [`tools/e2e/helm_l4_gpu_validate.sh`](../../e2e/helm_l4_gpu_validate.sh) runs `helm upgrade --install` against this chart with **`cloud.google.com/gke-accelerator=nvidia-l4`** and the **jounce.io/nodetype=L4** toleration, waits for the Job to complete (default timeout **55m**), prints tail logs on success, dumps more logs and `describe pod` on failure, and retries up to **3** times with **30s** sleep between attempts.
+Default **`testEnv`** in `values.yaml` sets **`DLLM_SKIP_GPU_SEMANTICS_MULTI_STEP=1`** so the Job skips one GPU case that can hit illegal CUDA access on some L4-class stacks; unset via Helm overrides to run the full file on hardware where it passes.
 
-Required env: **`KUBE_CONTEXT`**. Optional: **`GIT_REPO`** / **`GIT_BRANCH`** (defaults: `https://github.com/vllm-project/dllm-plugin.git` and the current `git` branch when the script is run from a checkout, else `main`). The cluster must be able to `git clone` the URL over HTTPS without credentials (public repo or equivalent).
+Default **`tests.pytestPaths`** runs a **single** MRV2 GPU case (`test_gpu_injects_dllm_mrv2_via_monkeypatch_stock_worker`); regex structured-output nodes are omitted because decoded text can be empty on some stacks—override `tests.pytestPaths` when validating on hardware where they pass.
 
-Default chart **`testEnv`** sets **`DLLM_SKIP_GPU_SEMANTICS_MULTI_STEP=1`** so the Helm Job skips one GPU case that can hit illegal CUDA access on some L4 nodes; unset via Helm overrides to run the full file on hardware where it passes.
+## Deploy and validate
 
-Default **`tests.pytestPaths`** runs a **single** MRV2 GPU case (`test_gpu_injects_dllm_mrv2_via_monkeypatch_stock_worker`); regex structured-output nodes are omitted on Helm L4 because decoded text can be empty on this stack—override `tests.pytestPaths` locally or via Helm when validating on hardware where they pass.
+Use normal Helm and kubectl. The Job name matches the Helm **release** name. Point `git.repoUrl` / `git.branch` at a ref the Pod can `git clone` over HTTPS (public repo or equivalent).
 
 ```bash
-export KUBE_CONTEXT='gke_it-gcp-model-validation_us-central1_rhoai-benchmark-development-cluster'
-export GIT_REPO='https://github.com/you/dllm-plugin.git'   # optional
-export GIT_BRANCH='your-feature-branch'                    # optional
-bash tools/e2e/helm_l4_gpu_validate.sh
+helm upgrade --install dllm-plugin-gpu-test ./tools/helm/dllm-plugin-gpu-test \
+  --namespace dllm --create-namespace \
+  --set git.repoUrl=https://github.com/you/dllm-plugin.git \
+  --set git.branch=main
+kubectl wait --for=condition=complete job/dllm-plugin-gpu-test -n dllm --timeout=55m
+kubectl logs job/dllm-plugin-gpu-test -n dllm --tail=200
 ```
 
 See also `docs/OPERATOR_LLaDA2.md` (Helm subsection).
