@@ -21,4 +21,17 @@ scheduling:
 
 The default `extraTolerations` target that **jounce.io L4** pattern. If your pool uses a different taint, edit `values.yaml` or the pod stays `Pending`. Confirm with `kubectl describe node <gpu-node> | grep -A2 Taints`.
 
+## Maintainer: L4 deploy + validate loop
+
+From the repository root, [`tools/e2e/helm_l4_gpu_validate.sh`](../../e2e/helm_l4_gpu_validate.sh) runs `helm upgrade --install` against this chart with **`cloud.google.com/gke-accelerator=nvidia-l4`** and the **jounce.io/nodetype=L4** toleration, waits for the Job to complete (default timeout **55m**), prints tail logs on success, dumps more logs and `describe pod` on failure, and retries up to **3** times with **30s** sleep between attempts.
+
+Required env: **`KUBE_CONTEXT`**. Optional: **`GIT_REPO`** / **`GIT_BRANCH`** (defaults: `https://github.com/vllm-project/dllm-plugin.git` and the current `git` branch when the script is run from a checkout, else `main`). The cluster must be able to `git clone` the URL over HTTPS without credentials (public repo or equivalent).
+
+```bash
+export KUBE_CONTEXT='gke_it-gcp-model-validation_us-central1_rhoai-benchmark-development-cluster'
+export GIT_REPO='https://github.com/you/dllm-plugin.git'   # optional
+export GIT_BRANCH='your-feature-branch'                    # optional
+bash tools/e2e/helm_l4_gpu_validate.sh
+```
+
 See also `docs/OPERATOR_LLaDA2.md` (Helm subsection).
