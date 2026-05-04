@@ -52,5 +52,4 @@ resources:
 # Extra env for pytest (see ``tests/gpu_memory.py``).
 # Default targets dedicated pool nodes (e.g. GKE L4); override down for tiny GPUs.
 testEnv:
-  DLLM_TEST_GPU_MEMORY_UTILIZATION: "0.45"
-  DLLM_TEST_KV_CACHE_MEMORY_BYTES: "none"
+  DLLM_TEST_GPU_MEMORY_UTILIZATION: "0.25"

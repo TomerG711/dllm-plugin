@@ -34,6 +34,9 @@ def test_gpu_mock_stack_multi_step_respects_max_tokens_with_engine_patch(
     monkeypatch.setenv("VLLM_PLUGINS", "dllm")
     monkeypatch.setenv("VLLM_USE_V2_MODEL_RUNNER", "1")
     monkeypatch.setenv("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
+    # L4 + dummy mock: FlashAttn + chunked prefill has triggered illegal CUDA access
+    # in sample(); TRITON path + sync prefill matches other GPU tests' stability.
+    monkeypatch.setenv("VLLM_ATTENTION_BACKEND", "TRITON_ATTN")
 
     max_new = 5
     with patch_engine_core_draft_hook_semantics():
@@ -52,6 +55,7 @@ def test_gpu_mock_stack_multi_step_respects_max_tokens_with_engine_patch(
             scheduler_cls="dllm_plugin.Scheduler",
             worker_cls="dllm_plugin.Worker",
             async_scheduling=False,
+            enable_chunked_prefill=False,
         )
         outputs = llm.generate(
             [TokensPrompt(prompt_token_ids=[1, 2, 3, 4])],
