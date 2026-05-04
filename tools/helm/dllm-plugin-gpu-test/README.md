@@ -29,7 +29,7 @@ Required env: **`KUBE_CONTEXT`**. Optional: **`GIT_REPO`** / **`GIT_BRANCH`** (d
 
 Default chart **`testEnv`** sets **`DLLM_SKIP_GPU_SEMANTICS_MULTI_STEP=1`** so the Helm Job skips one GPU case that can hit illegal CUDA access on some L4 nodes; unset via Helm overrides to run the full file on hardware where it passes.
 
-Default **`tests.pytestPaths`** omits **`test_gpu_dllm_stack_structured_output_regex_grammar`** (empty decode on some L4 stacks); add that node back with Helm `--set` / a values overlay when validating on hardware where it passes.
+Default **`tests.pytestPaths`** runs a **single** MRV2 GPU case (`test_gpu_injects_dllm_mrv2_via_monkeypatch_stock_worker`); regex structured-output nodes are omitted on Helm L4 because decoded text can be empty on this stack—override `tests.pytestPaths` locally or via Helm when validating on hardware where they pass.
 
 ```bash
 export KUBE_CONTEXT='gke_it-gcp-model-validation_us-central1_rhoai-benchmark-development-cluster'
