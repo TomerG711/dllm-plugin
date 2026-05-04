@@ -129,6 +129,33 @@ def test_skip_env_disables_patch(monkeypatch: pytest.MonkeyPatch) -> None:
         stub.model_executor.take_draft_token_ids.assert_called_once()
 
 
+def test_register_dllm_applies_runtime_patch_when_apply_env_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Opt-in env plus ``register_dllm()`` installs the EngineCore runtime patch."""
+
+    from vllm.v1.engine.core import EngineCore
+
+    from dllm_plugin import register_dllm
+
+    monkeypatch.delenv("VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH", raising=False)
+    monkeypatch.setenv("VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK", "1")
+    if not engine_core_draft_hook_patch_needed():
+        pytest.skip("installed vLLM already matches PR #36391 post_step layout")
+
+    orig_post = EngineCore.post_step
+    orig_step = EngineCore.step_with_batch_queue
+    try:
+        ech_mod._reset_runtime_patch_applied_for_tests()
+        register_dllm()
+        assert EngineCore.post_step is not orig_post
+        assert EngineCore.step_with_batch_queue is not orig_step
+    finally:
+        EngineCore.post_step = orig_post
+        EngineCore.step_with_batch_queue = orig_step
+        ech_mod._reset_runtime_patch_applied_for_tests()
+
+
 def test_apply_runtime_patch_idempotent_when_legacy_wheel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,6 +164,7 @@ def test_apply_runtime_patch_idempotent_when_legacy_wheel(
     from vllm.v1.engine.core import EngineCore
 
     monkeypatch.delenv("VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH", raising=False)
+    monkeypatch.setenv("VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK", "1")
     if not engine_core_draft_hook_patch_needed():
         pytest.skip("installed vLLM already matches PR #36391 post_step layout")
 
