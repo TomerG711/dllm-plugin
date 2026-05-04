@@ -61,6 +61,7 @@ echo "serve_http_smoke: starting vllm serve on 127.0.0.1:${PORT} (model ${SERVED
 uv run vllm serve "${MODEL_DIR}" \
   --tokenizer "${MODEL_DIR}" \
   --served-model-name "${SERVED_NAME}" \
+  --no-async-scheduling \
   --host 127.0.0.1 \
   --port "${PORT}" \
   --enforce-eager \
