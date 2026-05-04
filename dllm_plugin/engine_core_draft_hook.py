@@ -67,13 +67,6 @@ def _skip_patch_env_set() -> bool:
     return raw.lower() in ("1", "true", "yes", "on")
 
 
-def _apply_runtime_patch_env_requested() -> bool:
-    from dllm_plugin.config import DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK_ENV_VAR
-
-    raw = os.environ.get(DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK_ENV_VAR, "")
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 def engine_core_draft_hook_patch_needed() -> bool:
     """Return True if installed vLLM still uses the legacy spec-decode gate."""
 

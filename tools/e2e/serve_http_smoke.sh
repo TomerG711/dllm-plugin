@@ -5,7 +5,9 @@
 # Maintainer smoke: vLLM OpenAI HTTP server + mock dLLM stack (issue #35 / PR review).
 #
 # Requirements: repository root as cwd, Linux + CUDA, `uv sync --group dev --extra vllm`.
-# Uses curl only (no GuideLLM). Stops the server on exit.
+# Uses curl only (no GuideLLM). Stops the server on exit. Readiness and chat
+# requests assert **HTTP 200** explicitly via ``curl -w '%{http_code}'`` (not only
+# transport success).
 #
 # Env (common):
 #   VLLM_PLUGINS=dllm
@@ -45,7 +47,9 @@ else
 fi
 
 SERVE_PID=""
+CHAT_BODY=""
 cleanup() {
+  rm -f "${CHAT_BODY}"
   if [[ -n "${SERVE_PID}" ]] && kill -0 "${SERVE_PID}" 2>/dev/null; then
     kill "${SERVE_PID}" 2>/dev/null || true
     wait "${SERVE_PID}" 2>/dev/null || true
@@ -72,22 +76,32 @@ SERVE_PID=$!
 
 ready=0
 for _ in $(seq 1 120); do
-  if curl -sf "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then
+  code=$(curl -sS -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/health" || echo "000")
+  if [[ "${code}" == "200" ]]; then
     ready=1
     break
   fi
   sleep 1
 done
 if [[ "${ready}" != 1 ]]; then
-  echo "serve_http_smoke: /health did not become ready in time" >&2
+  echo "serve_http_smoke: /health did not return HTTP 200 in time" >&2
   exit 1
 fi
 
 echo "serve_http_smoke: POST /v1/chat/completions" >&2
-RESP=$(curl -sf "http://127.0.0.1:${PORT}/v1/chat/completions" \
-  -H "Content-Type: application/json" \
-  -d "{\"model\":\"${SERVED_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4,\"temperature\":0}")
+CHAT_BODY=$(mktemp)
+code=$(
+  curl -sS -o "${CHAT_BODY}" -w "%{http_code}" \
+    -H "Content-Type: application/json" \
+    -d "{\"model\":\"${SERVED_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4,\"temperature\":0}" \
+    "http://127.0.0.1:${PORT}/v1/chat/completions" || echo "000"
+)
+if [[ "${code}" != "200" ]]; then
+  echo "serve_http_smoke: expected HTTP 200 from /v1/chat/completions, got ${code}" >&2
+  cat "${CHAT_BODY}" >&2 || true
+  exit 1
+fi
 
-echo "${RESP}" | python3 -c 'import json,sys; j=json.load(sys.stdin); assert "choices" in j and len(j["choices"])>=1, j'
+python3 -c 'import json,sys; j=json.load(open(sys.argv[1])); assert "choices" in j and len(j["choices"])>=1, j' "${CHAT_BODY}"
 
 echo "serve_http_smoke: OK" >&2
