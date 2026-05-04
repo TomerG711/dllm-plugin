@@ -13,6 +13,7 @@ from dllm_plugin.config import DRAFT_SIZE, LLADA2_DEFAULT_MASK_TOKEN_ID
 from dllm_plugin.remasking import Llada2DefaultRemaskingPolicy, RemaskStepResult
 from dllm_plugin.worker import (
     DllmWorker,
+    DllmWorkerStep,
     is_v2_model_runner_enabled,
 )
 
@@ -103,3 +104,17 @@ def test_worker_rejects_malformed_policy_next_input_block(
             logits=_mock_logits(),
             policy=_BadBlockPolicy(),
         )
+
+
+def test_take_draft_token_ids_rejects_wrong_next_block_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VLLM_USE_V2_MODEL_RUNNER", "1")
+    worker = DllmWorker(require_v2_model_runner=True)
+    bad = DllmWorkerStep(
+        request_id="r1",
+        sampled_token_ids=(1, 2),
+        next_input_block=(0,) * (DRAFT_SIZE - 1),
+    )
+    with pytest.raises(ValueError, match="take_draft_token_ids"):
+        worker.take_draft_token_ids(bad)

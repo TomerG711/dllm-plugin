@@ -38,6 +38,26 @@ for incompatible scheduler/worker/model combinations unless validation is turned
 off via `strict=False` or `VLLM_DLLM_STRICT_STACK_VALIDATION=0` (see
 `docs/OPERATOR_LLaDA2.md`).
 
+## EngineCore draft hook (legacy PyPI wheels)
+
+The **One decode step** diagram below includes
+`Engine -> Engine: post_step take_draft_token_ids update_draft_token_ids`.
+On some **pinned** vLLM `0.20.x` wheels, `EngineCore` still gates that path on
+speculative decode, which breaks the dLLM block handoff until upstream ships
+[vLLM PR #36391](https://github.com/vllm-project/vllm/pull/36391).
+
+The plugin provides:
+
+- **Tests:** `dllm_plugin.engine_core_draft_hook.patch_engine_core_draft_hook_semantics` (temporary patch; see `docs/TESTING_DLLM_SEMANTICS.md`).
+- **Runtime (`vllm serve`, engine process):** optional patch applied from
+  `register_dllm()` when `VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK` is truthy;
+  implementation in `dllm_plugin.engine_core_draft_hook`. Disable any patching with
+  `VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH=1`.
+
+The runtime patch is **string-fragile**; widening the `vllm` pin or changing
+upstream sources requires re-validation (plugin issue
+[#2](https://github.com/vllm-project/dllm-plugin/issues/2)).
+
 ## Commit-0 rollback
 
 If no tokens are committed in a step, the plugin scheduler rolls back

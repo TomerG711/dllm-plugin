@@ -56,6 +56,14 @@ DLLM_MOCK_MODEL_CLASS_FQCN: Final[str] = (
 #: ``0``/``false``/``no``/``off`` (skip validation). Unset means strict.
 DLLM_STRICT_STACK_VALIDATION_ENV_VAR: Final[str] = "VLLM_DLLM_STRICT_STACK_VALIDATION"
 
+#: When truthy, ``register_dllm`` may apply the EngineCore PR **#36391** string
+#: patch at plugin load (``vllm serve`` / engine). See
+#: ``dllm_plugin.engine_core_draft_hook`` and
+#: ``VLLM_DLLM_SKIP_ENGINE_CORE_DRAFT_HOOK_PATCH``.
+DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK_ENV_VAR: Final[str] = (
+    "VLLM_DLLM_APPLY_ENGINE_CORE_DRAFT_HOOK"
+)
+
 
 def _read_strict_stack_validation_from_env() -> bool:
     raw = os.environ.get(DLLM_STRICT_STACK_VALIDATION_ENV_VAR)

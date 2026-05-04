@@ -18,6 +18,7 @@ Use this when opening or updating a PR that tracks **[issue #19](https://github.
 - [ ] Maps to issue #19 phase exit criteria (cite subsection).
 - [ ] Tests / docs updated per phase gate (unit, operator doc, integration path).
 - [ ] If GPU-only evidence: link job status + persisted logs (see `docs/OPERATOR_LLaDA2.md`).
+- [ ] If this PR adds **serve + HTTP** validation: note Helm `tests.runServeHttpSmoke` / `tools/e2e/serve_http_smoke.sh` or manual GPU run output.
 - [ ] Closes / updates linked GitHub issues with accurate scope (avoid claiming CI exercises GPU paths when only CPU smoke runs on default runners).
 
 For mock-stack vs Phase 7 real weights, keep closure language precise so **Phase 6 “integration confidence”** is not overstated relative to what CI actually runs.

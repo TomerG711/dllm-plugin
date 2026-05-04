@@ -63,6 +63,10 @@ dllm_plugin = ["py.typed"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "dllm_engine_patch: CPU tests for EngineCore PR #36391 shim (requires vLLM extra).",
+    "dllm_gpu_integration: GPU behavioral tests for dLLM stack (issue #35).",
+]
 
 [tool.ruff]
 line-length = 88
