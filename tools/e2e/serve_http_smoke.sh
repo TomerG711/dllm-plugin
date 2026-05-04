@@ -7,7 +7,8 @@
 # Requirements: repository root as cwd, Linux + CUDA, `uv sync --group dev --extra vllm`.
 # Uses curl only (no GuideLLM). Stops the server on exit. Readiness and chat
 # requests assert **HTTP 200** explicitly via ``curl -w '%{http_code}'`` (not only
-# transport success).
+# transport success). ``max_tokens`` stays at 1 so this stays a shallow decode
+# smoke (aligned with ``tests/test_vllm_mock_integration.py`` on tight L4 KV).
 #
 # Env (common):
 #   VLLM_PLUGINS=dllm
@@ -93,7 +94,7 @@ CHAT_BODY=$(mktemp)
 code=$(
   curl -sS -o "${CHAT_BODY}" -w "%{http_code}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${SERVED_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":4,\"temperature\":0}" \
+    -d "{\"model\":\"${SERVED_NAME}\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1,\"temperature\":0}" \
     "http://127.0.0.1:${PORT}/v1/chat/completions" || echo "000"
 )
 if [[ "${code}" != "200" ]]; then
